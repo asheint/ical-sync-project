@@ -1,6 +1,7 @@
+// src/google-webhook/google-webhook.service.ts
 import { Injectable, Logger } from '@nestjs/common';
 import { google } from 'googleapis';
-import { UserService } from '../user/user.service';
+import { UserService } from '../user/user.service'; // Import UserService
 import { GoogleAuthService } from '../google-auth/google-auth.service';
 
 @Injectable()
@@ -11,9 +12,6 @@ export class GoogleWebhookService {
     private readonly userService: UserService,
     private readonly googleAuthService: GoogleAuthService,
   ) {}
-
-  // Simplified: Removed isValidWebhookRequest for demo clarity.
-  // In production, robust webhook validation is essential.
 
   async processCalendarChange(
     channelId: string,
@@ -39,12 +37,11 @@ export class GoogleWebhookService {
       const calendar = google.calendar({ version: 'v3', auth: authClient });
 
       try {
-        // Fetch events updated in a small window to catch recent changes
         const fifteenMinutesAgo = new Date(
           Date.now() - 15 * 60 * 1000,
         ).toISOString();
         const response = await calendar.events.list({
-          calendarId: 'primary', // Check the primary calendar of the authenticated user
+          calendarId: 'primary',
           timeMin: fifteenMinutesAgo,
           singleEvents: true,
           orderBy: 'updated',
@@ -54,12 +51,12 @@ export class GoogleWebhookService {
         const allUpdatedEvents = response.data.items;
 
         if (allUpdatedEvents && allUpdatedEvents.length > 0) {
-          // Filter to include ONLY events that your app explicitly created and is tracking
+          // MODIFIED FILTER: Use the new filterTrackedEvents method from UserService
+          const trackedEventIdsToMonitor = user.trackedEvents
+            ? user.trackedEvents.map((e) => e.googleEventId)
+            : [];
           const relevantBookingEvents = allUpdatedEvents.filter(
-            (event) =>
-              event.id &&
-              user.trackedGoogleEventIds &&
-              user.trackedGoogleEventIds.includes(event.id),
+            (event) => event.id && trackedEventIdsToMonitor.includes(event.id),
           );
 
           if (relevantBookingEvents.length === 0) {
@@ -76,18 +73,9 @@ export class GoogleWebhookService {
 
             if (event.attendees && event.attendees.length > 0) {
               for (const attendee of event.attendees) {
-                // Log all attendees' status for tracked events.
-                // In your real application, you would find the specific patient/practitioner email
-                // associated with this booking from your database and check their status.
                 this.logger.log(
                   `  - Attendee: ${attendee.email}, RSVP Status: ${attendee.responseStatus || 'N/A'}`,
                 );
-
-                // Example: If this attendee is your tracked practitioner for this booking:
-                // if (attendee.email === 'practitioner@example.com') { // Replace with actual logic
-                //     this.logger.log(`    --> Practitioner RSVP for this booking: ${attendee.responseStatus}`);
-                //     // YOUR DATABASE UPDATE LOGIC GOES HERE (e.g., mark slot booked/rejected)
-                // }
               }
             } else {
               this.logger.log(

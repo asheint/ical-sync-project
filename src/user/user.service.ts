@@ -1,6 +1,12 @@
 // src/user/user.service.ts
 import { Injectable, Logger } from '@nestjs/common';
 
+// Define a separate interface for a tracked event
+export interface TrackedEvent {
+  googleEventId: string;
+  icsContent?: string; // Will store the generated ICS string for this event
+}
+
 export interface User {
   userId: string;
   googleAccessToken?: string;
@@ -9,7 +15,7 @@ export interface User {
   googleWatchChannelId?: string;
   googleWatchResourceId?: string;
   googleWatchExpiry?: Date;
-  trackedGoogleEventIds?: string[];
+  trackedEvents?: TrackedEvent[]; // Use an array of TrackedEvent
 }
 
 // In-memory store for demo purposes
@@ -55,22 +61,23 @@ export class UserService {
     if (tokens.refreshToken) user.googleRefreshToken = tokens.refreshToken;
     if (tokens.expiryDate) user.googleTokenExpiry = new Date(tokens.expiryDate);
     if (tokens.watchChannelId !== undefined)
-      user.googleWatchChannelId = tokens.watchChannelId; // Check for undefined
+      user.googleWatchChannelId = tokens.watchChannelId;
     if (tokens.watchResourceId !== undefined)
-      user.googleWatchResourceId = tokens.watchResourceId; // Check for undefined
+      user.googleWatchResourceId = tokens.watchResourceId;
     if (tokens.watchExpiry !== undefined)
-      user.googleWatchExpiry = new Date(parseInt(tokens.watchExpiry)); // Check for undefined
+      user.googleWatchExpiry = new Date(parseInt(tokens.watchExpiry));
 
-    // Only log if something meaningful was updated
     if (Object.keys(tokens).length > 0) {
       this.logger.debug(`User ${userId} Google tokens/watch info updated.`);
     }
     return user;
   }
 
-  async addTrackedGoogleEventId(
+  // MODIFIED: To also accept icsContent for the tracked event
+  async addTrackedGoogleEvent(
     userId: string,
-    eventId: string,
+    googleEventId: string,
+    icsContent: string,
   ): Promise<User> {
     let user = users.get(userId);
     if (!user) {
@@ -78,16 +85,40 @@ export class UserService {
       users.set(userId, user);
     }
 
-    if (!user.trackedGoogleEventIds) {
-      user.trackedGoogleEventIds = [];
+    if (!user.trackedEvents) {
+      user.trackedEvents = [];
     }
-    if (!user.trackedGoogleEventIds.includes(eventId)) {
-      user.trackedGoogleEventIds.push(eventId);
+
+    let existingEvent = user.trackedEvents.find(
+      (e) => e.googleEventId === googleEventId,
+    );
+    if (existingEvent) {
+      existingEvent.icsContent = icsContent; // Update existing
       this.logger.debug(
-        `Added event ID ${eventId} to user ${userId}'s tracked events.`,
+        `Updated ICS content for existing event ID ${googleEventId} for user ${userId}.`,
+      );
+    } else {
+      user.trackedEvents.push({ googleEventId, icsContent }); // Add new
+      this.logger.debug(
+        `Added event ID ${googleEventId} to user ${userId}'s tracked events with ICS content.`,
       );
     }
     return user;
+  }
+
+  // NEW: Method to retrieve ICS content for a specific event
+  async getIcsContentForEvent(
+    userId: string,
+    googleEventId: string,
+  ): Promise<string | undefined> {
+    const user = users.get(userId);
+    if (!user || !user.trackedEvents) {
+      return undefined;
+    }
+    const event = user.trackedEvents.find(
+      (e) => e.googleEventId === googleEventId,
+    );
+    return event?.icsContent;
   }
 
   // Simplified: Only necessary method for webhook cleanup
@@ -97,9 +128,20 @@ export class UserService {
       user.googleWatchChannelId = undefined;
       user.googleWatchResourceId = undefined;
       user.googleWatchExpiry = undefined;
-      // Optionally, clear tracked events associated with this channel if it's the only one
-      // For this demo, we'll keep tracked events until a full logout.
       this.logger.debug(`Removed watch channel info for user ${user.userId}.`);
     }
+  }
+
+  // MODIFIED: Update trackedGoogleEventIds to use trackedEvents
+  async filterTrackedEvents(
+    userId: string,
+    eventIds: string[],
+  ): Promise<string[]> {
+    const user = users.get(userId);
+    if (!user || !user.trackedEvents) {
+      return [];
+    }
+    const trackedEventIds = user.trackedEvents.map((e) => e.googleEventId);
+    return eventIds.filter((id) => trackedEventIds.includes(id));
   }
 }
