@@ -1,99 +1,90 @@
-import { Injectable } from '@nestjs/common';
-import ical, {
-  ICalCalendarMethod,
-  ICalAttendeeStatus,
-  ICalAttendeeRole,
-  ICalEventStatus,
-  ICalEventBusyStatus,
-} from 'ical-generator';
-import { CreateEventDto } from './dto/create-event.dto';
-
-export interface EventResponse {
-  eventId: string;
-  attendeeEmail: string;
-  response: 'accepted' | 'declined' | 'tentative';
-  respondedAt: Date;
-}
+import { Injectable, Logger } from '@nestjs/common';
+import { google, calendar_v3 } from 'googleapis';
+import { GoogleAuthService } from '../google-auth/google-auth.service';
+import { UserService } from '../user/user.service';
 
 @Injectable()
 export class CalendarService {
-  private eventResponses: Map<string, EventResponse[]> = new Map();
+  private readonly logger = new Logger(CalendarService.name);
 
-  generateEventId(): string {
-    return (
-      'event-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9)
-    );
-  }
+  constructor(
+    private readonly googleAuthService: GoogleAuthService,
+    private readonly userService: UserService,
+  ) {}
 
-  createICalEvent(eventData: CreateEventDto, eventId: string): string {
-    const calendar = ical({
-      name: 'Meeting Invitation',
-      timezone: 'UTC',
-      method: ICalCalendarMethod.REQUEST,
-      prodId: '//ZX Software//Calendar Invite//EN',
-    });
-
-    const event = calendar.createEvent({
-      id: eventId,
-      start: new Date(eventData.startDate),
-      end: new Date(eventData.endDate),
-      summary: eventData.title,
-      description: `${eventData.description}\nMeeting Link: ${eventData.meetingLink ?? ''}`, // Add link to description
-      location: eventData.meetingLink ?? 'Virtual Meeting', // Use link as location if provided
-      organizer: {
-        name: eventData.organizerName,
-        email: eventData.organizerEmail,
-      },
-      status: ICalEventStatus.CONFIRMED,
-      busystatus: ICalEventBusyStatus.BUSY,
-      sequence: 0,
-    });
-
-    // Add attendee
-    event.createAttendee({
-      name: eventData.attendeeEmail.split('@')[0],
-      email: eventData.attendeeEmail,
-      rsvp: true,
-      status: ICalAttendeeStatus.NEEDSACTION,
-      role: ICalAttendeeRole.REQ,
-    });
-
-    return calendar.toString();
-  }
-
-  recordResponse(
-    eventId: string,
-    attendeeEmail: string,
-    response: 'accepted' | 'declined' | 'tentative',
-  ): void {
-    if (!this.eventResponses.has(eventId)) {
-      this.eventResponses.set(eventId, []);
+  async createDemoEvent(
+    userId: string,
+    practitionerEmail: string,
+  ): Promise<string> {
+    const user = await this.userService.findByUserId(userId);
+    if (!user || !user.googleRefreshToken) {
+      throw new Error(
+        'User not found or not authenticated. Please authorize with Google first.',
+      );
     }
 
-    const responses = this.eventResponses.get(eventId)!;
-    const existingResponseIndex = responses.findIndex(
-      (r) => r.attendeeEmail === attendeeEmail,
+    const authClient = await this.googleAuthService.getAuthenticatedClient(
+      user.googleRefreshToken,
     );
+    const calendar = google.calendar({ version: 'v3', auth: authClient });
 
-    const eventResponse: EventResponse = {
-      eventId,
-      attendeeEmail,
-      response,
-      respondedAt: new Date(),
+    const eventDateTime = new Date();
+    eventDateTime.setHours(eventDateTime.getHours() + 1);
+
+    const event: calendar_v3.Schema$Event = {
+      summary: `Booking with Practitioner - ${new Date().toLocaleTimeString('en-US')}`,
+      description: `Demo booking from your platform. Patient: ${userId}, Practitioner: ${practitionerEmail}.`,
+      start: {
+        dateTime: eventDateTime.toISOString(),
+        timeZone: 'Asia/Colombo',
+      },
+      end: {
+        dateTime: new Date(
+          eventDateTime.getTime() + 60 * 60 * 1000,
+        ).toISOString(),
+        timeZone: 'Asia/Colombo',
+      },
+      attendees: [{ email: practitionerEmail }],
+      reminders: {
+        useDefault: false,
+        overrides: [
+          { method: 'email', minutes: 24 * 60 },
+          { method: 'popup', minutes: 10 },
+        ],
+      },
     };
 
-    if (existingResponseIndex >= 0) {
-      responses[existingResponseIndex] = eventResponse;
-    } else {
-      responses.push(eventResponse);
+    try {
+      const response = await calendar.events.insert({
+        calendarId: 'primary',
+        requestBody: event,
+        sendNotifications: true,
+      });
+
+      this.logger.log(`Created Google Calendar Event: "${event.summary}"`);
+      this.logger.debug(`Event Link: ${response.data.htmlLink}`);
+
+      if (response.data.id) {
+        await this.userService.addTrackedGoogleEventId(
+          userId,
+          response.data.id,
+        );
+        this.logger.log(`Event ID ${response.data.id} is now being tracked.`);
+      }
+
+      if (!response.data.htmlLink) {
+        throw new Error('Failed to get event HTML link after creation.');
+      }
+      return response.data.htmlLink;
+    } catch (error) {
+      this.logger.error(
+        'Error creating Google Calendar event:',
+        error.message,
+        error.stack,
+      );
+      throw new Error(
+        `Failed to create Google Calendar event: ${error.message}`,
+      );
     }
-  }
-
-  getEventResponses(eventId: string): EventResponse[] {
-    return this.eventResponses.get(eventId) || [];
-  }
-
-  getAllResponses(): Map<string, EventResponse[]> {
-    return this.eventResponses;
   }
 }
