@@ -1,18 +1,23 @@
-# iCal Sync Project
+# iCal Booking Demo (NestJS)
 
-A NestJS-based backend for sending calendar invites via email, tracking attendee responses, and managing event data using iCal format.
+A backend demo for booking appointments and sending calendar invites via email using iCal (.ics) attachments. Built with NestJS, it allows patients to book consultations, sends invites to practitioners, and tracks responses (accept/reject) via custom email links.
+
+---
 
 ## Features
 
-- Create and send calendar invites via email (with .ics attachment)
-- Attendees can respond (Accept/Decline/Maybe) via email links
-- Track responses for each event
-- RESTful API endpoints for event management
+- Booking form for patients to request appointments
+- Sends calendar invites (.ics) to practitioners via email
+- Practitioner can accept/reject via custom links in the email
+- Patient receives confirmation email based on practitioner's response
+- All booking and response logic is handled in-memory for demo purposes
+
+---
 
 ## Tech Stack
 
 - [NestJS](https://nestjs.com/) (TypeScript)
-- [ical-generator](https://github.com/sebbo2002/ical-generator)
+- [ical-generator](https://github.com/sebbo2002/ical-generator) (iCal file creation)
 - [nodemailer](https://nodemailer.com/) (SMTP email sending)
 - [dotenv](https://www.npmjs.com/package/dotenv) (environment variables)
 
@@ -30,7 +35,7 @@ npm install
 
 ### 2. Environment Setup
 
-Create a `.env` file in the root directory with your SMTP credentials:
+Create a `.env` file in the root directory with your SMTP credentials and (optionally) Google API credentials:
 
 ```
 EMAIL_HOST=smtp.resend.com
@@ -39,6 +44,11 @@ EMAIL_USER=your_smtp_user
 EMAIL_PASSWORD=your_smtp_password
 EMAIL_FROM=your_email@example.com
 BASE_URL=http://localhost:3000
+
+# Google API Credentials (for Google Calendar integration, see below)
+GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+GOOGLE_REDIRECT_URI=http://localhost:3000/google-auth/callback
 ```
 
 ### 3. Run the Server
@@ -51,121 +61,54 @@ Server runs at: [http://localhost:3000](http://localhost:3000)
 
 ---
 
+## How It Works
+
+1. **Booking Form**: Visit [http://localhost:3000](http://localhost:3000) to access the booking form. Fill in patient and practitioner details, date, and time.
+2. **Email Invite**: Practitioner receives an email with a .ics calendar invite and two links: Accept Booking / Reject Booking.
+3. **Response Simulation**: Clicking a link updates the booking status and sends a confirmation email to the patient.
+4. **Terminal Logs**: All actions are logged in the server terminal for demo visibility.
+
+---
+
 ## API Endpoints
 
-### 1. Send Calendar Invite
-
-**POST** `/calendar/send-invite`
-
-Send a calendar invite to an attendee via email.
-
-#### Request Body (JSON)
-
-```json
-{
-  "title": "Project Sync Meeting",
-  "description": "Discuss project updates and next steps.",
-  "startDate": "2025-07-30T10:00:00.000Z",
-  "endDate": "2025-07-30T11:00:00.000Z",
-  "attendeeEmail": "attendee@example.com",
-  "organizerEmail": "organizer@example.com",
-  "organizerName": "Organizer Name",
-  "meetingLink": "https://meet.example.com/abc123"
-}
-```
-
-#### Sample Response
-
-```json
-{
-  "success": true,
-  "message": "Calendar invite sent successfully",
-  "eventId": "event-1234567890-abcdefg"
-}
-```
+- `GET /` — Booking form (HTML)
+- `POST /book` — Create a booking and send invite
+- `GET /booking/:id/:status` — Practitioner simulates Accept/Reject (status = `accept` or `reject`)
 
 ---
 
-### 2. Respond to Invite
+## Configuration Notes
 
-**GET** `/calendar/respond/:eventId?email=<attendeeEmail>&response=<accepted|declined|tentative>`
-
-Records attendee's response. This is typically accessed via the links in the email.
-
-#### Example
-
-```
-GET /calendar/respond/event-1234567890-abcdefg?email=attendee@example.com&response=accepted
-```
+- Set `EMAIL_PASSWORD` to your Resend API Key (or SMTP password)
+- Ensure `EMAIL_FROM` domain is verified in Resend
+- All configuration is loaded from `.env` via `src/config/configuration.ts`
 
 ---
 
-### 3. Get Event Responses
-
-**GET** `/calendar/responses/:eventId`
-
-Returns all responses for a specific event.
-
-#### Sample Response
-
-```json
-{
-  "eventId": "event-1234567890-abcdefg",
-  "responses": [
-    {
-      "eventId": "event-1234567890-abcdefg",
-      "attendeeEmail": "attendee@example.com",
-      "response": "accepted",
-      "respondedAt": "2025-07-29T12:34:56.789Z"
-    }
-  ]
-}
-```
-
----
-
-### 4. Get All Responses
-
-**GET** `/calendar/responses`
-
-Returns responses for all events.
-
----
-
-## Testing with Postman
-
-### 1. Send Invite
-
-- Set method to `POST`
-- URL: `http://localhost:3000/calendar/send-invite`
-- Body: Select `raw` and `JSON`, then use the sample JSON above.
-
-### 2. Respond to Invite
-
-- Set method to `GET`
-- URL: `http://localhost:3000/calendar/respond/<eventId>?email=<attendeeEmail>&response=accepted`
-- Replace `<eventId>` and `<attendeeEmail>` with actual values.
-
-### 3. Get Responses
-
-- Set method to `GET`
-- URL: `http://localhost:3000/calendar/responses/<eventId>`
-
----
-
-## Example Postman Collection
-
-You can create a Postman collection with these endpoints and sample payloads for easy testing.
-
----
-
-## Running Tests
+## Testing
 
 ```bash
 npm run test         # Unit tests
 npm run test:e2e     # End-to-end tests
 npm run test:cov     # Coverage report
 ```
+
+---
+
+## Google Calendar API Integration
+
+This demo currently uses iCal email invites only. If you want to use Google Calendar API integration (OAuth authentication, direct event creation in Google Calendar, etc.), you can revert to the branch/commit:
+
+**Branch:** `feat/Integrated-Google-Calendar-API`
+
+That branch includes functions for Google OAuth authentication and Google Calendar API event management. To switch back:
+
+```bash
+git checkout feat/Integrated-Google-Calendar-API
+```
+
+You will need to set up Google API credentials in your `.env` as shown above.
 
 ---
 
