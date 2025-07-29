@@ -1,14 +1,10 @@
-// src/app.module.ts
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
 import configuration from './config/configuration';
-import { GoogleAuthModule } from './google-auth/google-auth.module';
-import { CalendarModule } from './calendar/calendar.module';
-import { GoogleWebhookModule } from './google-webhook/google-webhook.module';
-import { UserModule } from './user/user.module';
-import { EmailModule } from './email/email.module'; // NEW: Import EmailModule
+import { EmailModule } from './email/email.module';
+import { BookingModule } from './booking/booking.module';
 
 @Module({
   imports: [
@@ -16,11 +12,8 @@ import { EmailModule } from './email/email.module'; // NEW: Import EmailModule
       isGlobal: true,
       load: [configuration],
     }),
-    UserModule,
-    GoogleAuthModule,
-    CalendarModule,
-    GoogleWebhookModule,
-    EmailModule, // NEW: Add EmailModule here
+    EmailModule,
+    BookingModule,
   ],
   controllers: [AppController],
   providers: [AppService],

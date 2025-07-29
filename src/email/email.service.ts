@@ -13,7 +13,6 @@ export class EmailService {
   constructor(private configService: ConfigService) {
     const emailConfig = this.configService.get('email');
 
-    // Ensure all necessary config values are present before attempting to create transporter
     if (
       !emailConfig ||
       !emailConfig.host ||
@@ -30,17 +29,14 @@ export class EmailService {
     this.transporter = nodemailer.createTransport({
       host: emailConfig.host,
       port: emailConfig.port,
-      secure: emailConfig.secure, // Should be 'false' for Resend on port 587 (uses STARTTLS)
+      secure: emailConfig.secure,
       auth: {
         user: emailConfig.user,
         pass: emailConfig.pass,
       },
-      // Remove or set to true: `tls: { rejectUnauthorized: false }` is for specific local/test setups,
-      // generally not needed or desired for production services like Resend.
-      // If you face CERT_HAS_EXPIRED or similar errors during local development,
-      // you *might* temporarily set rejectUnauthorized: false, but ideally fix the certificate issue.
-      // For now, let's remove it as it's not standard for Resend.
-      // If you encounter connection issues later, this is one place to check.
+      // Resend uses valid TLS certificates, so rejectUnauthorized should typically be true or removed.
+      // Set to false ONLY if you encounter certificate issues in local development, but NOT for production.
+      // tls: { rejectUnauthorized: false }
     });
 
     this.mailFrom = emailConfig.from;
@@ -51,41 +47,20 @@ export class EmailService {
           'Email transporter verification failed:',
           error.message,
         );
-        // Do not throw here, allow app to start, but log the error
       } else {
         this.logger.log('Email transporter ready and verified.');
       }
     });
   }
 
-  async sendIcsEmail(
-    to: string,
-    subject: string,
-    html: string,
-    icsContent: string,
-    icsFilename: string,
-  ): Promise<void> {
+  async sendEmail(mailOptions: Mail.Options): Promise<void> {
     try {
-      const mailOptions = {
-        from: this.mailFrom,
-        to: to,
-        subject: subject,
-        html: html,
-        attachments: [
-          {
-            filename: icsFilename,
-            content: icsContent,
-            contentType: 'text/calendar',
-            method: 'PUBLISH', // Important for iCal attachments
-          },
-        ],
-      };
-
+      mailOptions.from = mailOptions.from || this.mailFrom; // Ensure sender is set
       const info = await this.transporter.sendMail(mailOptions);
-      this.logger.log(`Email sent successfully to ${to}: ${info.messageId}`);
+      this.logger.log(`Email sent: ${info.messageId} to ${mailOptions.to}`);
     } catch (error) {
       this.logger.error(
-        `Failed to send email to ${to}:`,
+        `Failed to send email to ${mailOptions.to}:`,
         error.message,
         error.stack,
       );
